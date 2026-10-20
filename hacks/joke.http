@@ -1,0 +1,15 @@
+### Count jokes - expect 200 and an object with count
+GET {{baseUrl}}/api/jokes/count
+Accept: application/json
+
+### Read jokes - expect 200 and an array
+GET {{baseUrl}}/api/jokes/15
+Accept: application/json
+
+### Update a single joke likes- expect 200 and an array
+PUT {{baseUrl}}/api/jokes/like/15
+Accept: application/json
+
+### Update a single joke jeers- expect 200 and an array
+PUT {{baseUrl}}/api/jokes/jeer/15
+Accept: application/json
