@@ -1,0 +1,46 @@
+### Submit a survey response (donate) - expect 200 and the created record
+POST {{baseUrl}}/api/survey/
+Content-Type: application/json
+Accept: application/json
+
+{
+  "response": "donate",
+  "name": "Dana",
+  "email": "dana@example.com"
+}
+
+### Submit a survey response (volunteer) - expect 200 and the created record
+POST {{baseUrl}}/api/survey/
+Content-Type: application/json
+Accept: application/json
+
+{
+  "response": "volunteer",
+  "name": "Victor"
+}
+
+### Submit a survey response (none) - expect 200 and the created record
+POST {{baseUrl}}/api/survey/
+Content-Type: application/json
+Accept: application/json
+
+{
+  "response": "none"
+}
+
+### Submit an invalid response - expect 400
+POST {{baseUrl}}/api/survey/
+Content-Type: application/json
+Accept: application/json
+
+{
+  "response": "bogus"
+}
+
+### Read all survey responses - expect 200 and an array
+GET {{baseUrl}}/api/survey/all
+Accept: application/json
+
+### Read survey response counts - expect 200 and an object with donate/volunteer/none
+GET {{baseUrl}}/api/survey/stats
+Accept: application/json
