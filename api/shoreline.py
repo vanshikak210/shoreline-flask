@@ -106,9 +106,16 @@ class SignupAPI(Resource):
         return jsonify({"message": "created", "uid": user.uid, "name": user.name})
 
 
+def ensure_survey_table():
+    """Create shoreline_surveys if missing. Cheap (checkfirst) and safe to call per request;
+    OCS Flask init scripts don't know about this model, so we don't rely on them."""
+    ShorelineSurvey.__table__.create(bind=db.engine, checkfirst=True)
+
+
 class SurveyAPI(Resource):
     @token_required()
     def post(self):
+        ensure_survey_table()
         user = g.current_user
         body = request.get_json(silent=True) or {}
         choice = str(body.get("choice", "")).strip().lower()
@@ -130,6 +137,7 @@ class SurveyAPI(Resource):
 
     @token_required()
     def get(self):
+        ensure_survey_table()
         row = ShorelineSurvey.query.filter_by(user_id=g.current_user.id).first()
         if not row:
             return {"message": "no survey on file"}, 404
@@ -139,6 +147,7 @@ class SurveyAPI(Resource):
 class SurveyAllAPI(Resource):
     @token_required("Admin")
     def get(self):
+        ensure_survey_table()
         return jsonify([r.read() for r in ShorelineSurvey.query.order_by(ShorelineSurvey.updated_at.desc()).all()])
 
 
@@ -150,3 +159,7 @@ api.add_resource(SurveyAllAPI, "/survey/all")
 def initShorelineSurveys():
     with app.app_context():
         db.create_all()
+
+
+# Create the shoreline_surveys table on startup if it doesn't exist yet.
+initShorelineSurveys()
