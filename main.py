@@ -33,6 +33,7 @@ from api.post import post_api  # Import the social media post API
 from api.congrats_api import congrats_api  # Import the congrats API
 from api.profile_game import profile_game_api  # CS Pathway Game profile persistence
 from api.snapshot_proxy import snapshot_proxy
+from api.shoreline import shoreline_api
 #from api.announcement import announcement_api ##temporary revert
 
 # database Initialization functions
@@ -44,8 +45,6 @@ from api.analytics import get_date_range
 # from api.grade_api import grade_api
 from api.study import study_api
 from api.feedback_api import feedback_api
-from api.survey_api import survey_api
-from model.survey import Survey
 from model.study import Study, initStudies
 from model.classroom import Classroom
 from model.skill_snapshot import SkillSnapshot
@@ -88,7 +87,6 @@ app.register_blueprint(student_api)
 app.register_blueprint(study_api)
 app.register_blueprint(classroom_api)
 app.register_blueprint(feedback_api)
-app.register_blueprint(survey_api)
 app.register_blueprint(data_export_import_api)  # Register the data export/import API
 app.register_blueprint(dynamic_api)  # Register the dynamic leaderboard API
 app.register_blueprint(events_api)  # Register the elementary leaderboard API
@@ -96,7 +94,8 @@ app.register_blueprint(joke_api)  # Register the joke API blueprint
 app.register_blueprint(post_api)  # Register the social media post API
 app.register_blueprint(congrats_api)  # Register the congrats message API
 app.register_blueprint(profile_game_api)  # CS Pathway Game profile persistence
-app.register_blueprint(snapshot_proxy)  # Register the snapshot proxy API
+app.register_blueprint(snapshot_proxy) 
+app.register_blueprint(shoreline_api)# Register the snapshot proxy API
 # app.register_blueprint(announcement_api) ##temporary revert
 
 # Jokes file initialization

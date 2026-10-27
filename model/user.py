@@ -159,6 +159,8 @@ class User(db.Model, UserMixin):
     _class = db.Column(db.JSON, unique=False, nullable=True)
     _school = db.Column(db.String(255), default="Unknown", nullable=True)
     _game_profile = db.Column(db.JSON, unique=False, nullable=True)
+    # How this user wants to get involved: 'volunteer', 'donate', or null/unset.
+    _interest = db.Column(db.String(32), unique=False, nullable=True)
     # Bumped every time the password actually changes (set_password). Embedded in issued
     # JWTs and in the Flask-Login session id (see get_id) and checked on every request, so
     # a stolen JWT or session cookie stops working the moment this account's password is
@@ -390,6 +392,23 @@ class User(db.Model, UserMixin):
     def game_profile(self, game_profile):
         self._game_profile = game_profile
 
+    VALID_INTERESTS = ('volunteer', 'donate')
+
+    @property
+    def interest(self):
+        return self._interest
+
+    def set_interest(self, interest):
+        """Set and persist how this user wants to get involved.
+
+        Raises ValueError if interest isn't one of VALID_INTERESTS.
+        """
+        if interest not in self.VALID_INTERESTS:
+            raise ValueError(f"interest must be one of {self.VALID_INTERESTS}")
+        self._interest = interest
+        db.session.commit()
+        return self._interest
+
     def save_game_profile(self, game_profile):
         """Create or replace the user's game profile and persist to DB."""
         from sqlalchemy.orm.attributes import flag_modified
@@ -505,6 +524,7 @@ class User(db.Model, UserMixin):
             "password": self._password,  # Only for internal use, not for API
             "school": self.school,
             "game_profile": self.game_profile,
+            "interest": self.interest,
             "active": self.active,
             "last_verified": self.last_verified.isoformat() if self.last_verified else None,
             "verification_state": self.verification_state,

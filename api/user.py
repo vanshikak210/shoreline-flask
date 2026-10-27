@@ -109,7 +109,24 @@ class UserAPI:
             user_data['is_teacher'] = current_user.is_teacher()
             return jsonify(user_data)
     
-    class _BULK(Resource):  # Users API operation for Create, Read, Update, Delete 
+    class _Interest(Resource):  # Get-involved (donate/volunteer) preference for the current user
+        @token_required()
+        def get(self):
+            current_user = g.current_user
+            return jsonify({"interest": current_user.interest})
+
+        @token_required()
+        def put(self):
+            current_user = g.current_user
+            data = request.get_json(silent=True) or {}
+            interest = data.get('interest')
+            try:
+                current_user.set_interest(interest)
+            except ValueError:
+                return {"error": f"interest must be one of {list(User.VALID_INTERESTS)}"}, 400
+            return jsonify({"interest": current_user.interest})
+
+    class _BULK(Resource):  # Users API operation for Create, Read, Update, Delete
         def post(self):
             ''' Handle bulk user creation by sending POST requests to the single user endpoint '''
             users = request.get_json()
@@ -895,6 +912,7 @@ class UserAPI:
 
     # building RESTapi endpoint
     api.add_resource(_ID, '/id')
+    api.add_resource(_Interest, '/user/interest')
     api.add_resource(_BULK, '/users')
     api.add_resource(_CRUD, '/user')
     api.add_resource(_GuestCRUD, '/user/guest')
