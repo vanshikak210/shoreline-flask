@@ -539,7 +539,7 @@ class UserAPI:
                                 httponly=True,
                                 path='/',
                                 samesite='None',
-                                domain='.opencodingsociety.com'
+                                domain=os.environ.get('COOKIE_DOMAIN') or None  # unset = host-only cookie (Render etc.)
                             )
                         else:
                             resp.set_cookie(
@@ -551,7 +551,6 @@ class UserAPI:
                                 path='/',
                                 samesite='Lax'
                             )
-                        print(f"Token set: {token}")
                         return resp 
                     except Exception as e:
                         return {
@@ -596,7 +595,7 @@ class UserAPI:
                         httponly=True,
                         path='/',
                         samesite='None',
-                        domain='.opencodingsociety.com'
+                        domain=os.environ.get('COOKIE_DOMAIN') or None  # unset = host-only cookie (Render etc.)
                 
                     )
                 else:

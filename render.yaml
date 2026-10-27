@@ -1,0 +1,21 @@
+# Render Blueprint: https://render.com/docs/blueprint-spec
+# Free web service. SQLite lives on the instance's disk, so data resets on each deploy/restart.
+services:
+  - type: web
+    name: shoreline-flask
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # Create tables + seed users (passwords come from DEFAULT_PASSWORD), then serve.
+    # One worker: SQLite does not handle concurrent writers across processes.
+    startCommand: python scripts/render_init.py; gunicorn main:app --workers 1 --threads 4 --timeout 60 --bind 0.0.0.0:$PORT
+    healthCheckPath: /
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: IS_PRODUCTION
+        value: "true"
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEFAULT_PASSWORD
+        generateValue: true

@@ -43,7 +43,11 @@ allowed_origins = [
     # Regex pattern to match any subdomain of opencodingsociety.com
     r'https://.*\.opencodingsociety\.com',
     'https://opencodingsociety.com',
+    # Shoreline frontend on GitHub Pages
+    'https://vanshikak210.github.io',
 ]
+# Extra origins for a deployed frontend, comma-separated (e.g. a custom domain).
+allowed_origins += [o.strip() for o in (os.environ.get('EXTRA_CORS_ORIGINS') or '').split(',') if o.strip()]
 
 cors = CORS(
    app,
