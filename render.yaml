@@ -8,7 +8,7 @@ services:
     buildCommand: pip install -r requirements.txt
     # Create tables + seed users (passwords come from DEFAULT_PASSWORD), then serve.
     # One worker: SQLite does not handle concurrent writers across processes.
-    startCommand: python scripts/render_init.py; gunicorn main:app --workers 1 --threads 4 --timeout 60 --bind 0.0.0.0:$PORT
+    startCommand: python scripts/render_init.py; gunicorn main:app --workers 1 --threads 4 --timeout 60 --bind 0.0.0.0:$PORT --access-logfile -
     healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
