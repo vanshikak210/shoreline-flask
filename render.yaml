@@ -19,3 +19,6 @@ services:
         generateValue: true
       - key: DEFAULT_PASSWORD
         generateValue: true
+      # ~5x faster logins on the free plan's tiny CPU (default is 1,000,000).
+      - key: PASSWORD_HASH_ITERATIONS
+        value: "200000"
