@@ -17,9 +17,14 @@ Routes (all under /api/shoreline):
     POST /api/shoreline/survey   body {"choice": "donate" | "volunteer" | "none"}  (JWT cookie)
     GET  /api/shoreline/survey   -> the caller's latest choice
     GET  /api/shoreline/survey/all  (Admin only) -> every user's latest choice
+    GET  /api/shoreline/profile  -> name, email, profile fields, survey choice, hours log, totals
+    PUT  /api/shoreline/profile  body any of {"name","email","phone","neighborhood",
+                                 "availability","interests":[...],"bio","choice"}
+    POST /api/shoreline/hours    body {"date":"YYYY-MM-DD","activity","hours","notes"}
+    DELETE /api/shoreline/hours/<id>   (only your own entries)
 """
 
-from datetime import datetime
+from datetime import date, datetime
 
 from flask import Blueprint, g, jsonify, request
 from flask_restful import Api, Resource
@@ -38,6 +43,12 @@ shoreline_api = Blueprint("shoreline_api", __name__, url_prefix="/api/shoreline"
 api = Api(shoreline_api)
 
 VALID_CHOICES = {"donate", "volunteer", "none"}
+
+# Profile choices shown on /shoreline/profile; keep in sync with _data/shoreline_pages.yml.
+NEIGHBORHOODS = ["Pacific Beach", "Mission Beach", "La Jolla", "Other"]
+AVAILABILITY = ["Weekday mornings", "Weekday evenings", "Weekends", "Flexible"]
+INTERESTS = ["Street Outreach", "Compass Station Support", "Supply Drives", "Donations"]
+ACTIVITIES = ["Street Outreach", "Compass Station Support", "Supply Drive", "Event", "Other"]
 
 
 class ShorelineSurvey(db.Model):
@@ -60,6 +71,53 @@ class ShorelineSurvey(db.Model):
             "user_id": self.user_id,
             "choice": self.choice,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
+        }
+
+
+class ShorelineProfile(db.Model):
+    """Shoreline-only details for a user. Name and email stay on the OCS users table."""
+
+    __tablename__ = "shoreline_profiles"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
+    phone = db.Column(db.String(30), default="")
+    neighborhood = db.Column(db.String(40), default="")
+    availability = db.Column(db.String(40), default="")
+    interests = db.Column(db.String(200), default="")  # comma-separated INTERESTS
+    bio = db.Column(db.String(500), default="")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def read(self):
+        return {
+            "phone": self.phone or "",
+            "neighborhood": self.neighborhood or "",
+            "availability": self.availability or "",
+            "interests": [i for i in (self.interests or "").split(",") if i],
+            "bio": self.bio or "",
+        }
+
+
+class ShorelineHours(db.Model):
+    """One volunteer-hours entry logged by a user."""
+
+    __tablename__ = "shoreline_hours"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    date = db.Column(db.Date, nullable=False)
+    activity = db.Column(db.String(40), nullable=False)
+    hours = db.Column(db.Float, nullable=False)
+    notes = db.Column(db.String(200), default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def read(self):
+        return {
+            "id": self.id,
+            "date": self.date.isoformat(),
+            "activity": self.activity,
+            "hours": self.hours,
+            "notes": self.notes or "",
         }
 
 
@@ -107,9 +165,10 @@ class SignupAPI(Resource):
 
 
 def ensure_survey_table():
-    """Create shoreline_surveys if missing. Cheap (checkfirst) and safe to call per request;
-    OCS Flask init scripts don't know about this model, so we don't rely on them."""
-    ShorelineSurvey.__table__.create(bind=db.engine, checkfirst=True)
+    """Create the Shoreline tables if missing. Cheap (checkfirst) and safe to call per
+    request; OCS Flask init scripts don't know about these models, so we don't rely on them."""
+    for model in (ShorelineSurvey, ShorelineProfile, ShorelineHours):
+        model.__table__.create(bind=db.engine, checkfirst=True)
 
 
 class SurveyAPI(Resource):
@@ -151,9 +210,147 @@ class SurveyAllAPI(Resource):
         return jsonify([r.read() for r in ShorelineSurvey.query.order_by(ShorelineSurvey.updated_at.desc()).all()])
 
 
+def _clean(value, limit):
+    return str(value or "").strip()[:limit]
+
+
+def _profile_payload(user):
+    profile = ShorelineProfile.query.filter_by(user_id=user.id).first()
+    survey = ShorelineSurvey.query.filter_by(user_id=user.id).first()
+    entries = ShorelineHours.query.filter_by(user_id=user.id) \
+        .order_by(ShorelineHours.date.desc(), ShorelineHours.id.desc()).all()
+    total = round(sum(e.hours for e in entries), 2)
+    payload = {
+        "uid": user.uid,
+        "name": user.name,
+        "email": getattr(user, "email", "") if getattr(user, "email", "") != "?" else "",
+        "choice": survey.choice if survey else None,
+        "hours": [e.read() for e in entries],
+        "total_hours": total,
+        "shifts": len(entries),
+        "options": {
+            "neighborhoods": NEIGHBORHOODS,
+            "availability": AVAILABILITY,
+            "interests": INTERESTS,
+            "activities": ACTIVITIES,
+        },
+    }
+    payload.update(profile.read() if profile else ShorelineProfile().read())
+    return payload
+
+
+class ProfileAPI(Resource):
+    @token_required()
+    def get(self):
+        ensure_survey_table()
+        return jsonify(_profile_payload(g.current_user))
+
+    @token_required()
+    def put(self):
+        ensure_survey_table()
+        user = g.current_user
+        body = request.get_json(silent=True) or {}
+
+        # Validate everything first so a bad field doesn't half-save the profile.
+        name = _clean(body.get("name"), 80)
+        email = _clean(body.get("email"), 120)
+        if "name" in body and len(name) < 2:
+            return {"message": "Name must be at least 2 characters"}, 400
+        if "email" in body and email and "@" not in email:
+            return {"message": "Enter a valid email"}, 400
+        neighborhood = _clean(body.get("neighborhood"), 40)
+        if neighborhood and neighborhood not in NEIGHBORHOODS:
+            return {"message": f"neighborhood must be one of {NEIGHBORHOODS}"}, 400
+        availability = _clean(body.get("availability"), 40)
+        if availability and availability not in AVAILABILITY:
+            return {"message": f"availability must be one of {AVAILABILITY}"}, 400
+        interests = body.get("interests") or []
+        if not isinstance(interests, list) or any(i not in INTERESTS for i in interests):
+            return {"message": f"interests must be a list from {INTERESTS}"}, 400
+        choice = _clean(body.get("choice"), 16).lower()
+        if choice and choice not in VALID_CHOICES:
+            return {"message": f"choice must be one of {sorted(VALID_CHOICES)}"}, 400
+
+        user_changes = {k: v for k, v in (("name", name), ("email", email)) if k in body and v}
+        if user_changes:
+            user.update(user_changes)
+
+        profile = ShorelineProfile.query.filter_by(user_id=user.id).first()
+        if profile is None:
+            profile = ShorelineProfile(user_id=user.id)
+            db.session.add(profile)
+        if "phone" in body:
+            profile.phone = _clean(body.get("phone"), 30)
+        if "neighborhood" in body:
+            profile.neighborhood = neighborhood
+        if "availability" in body:
+            profile.availability = availability
+        if "interests" in body:
+            profile.interests = ",".join(dict.fromkeys(interests))
+        if "bio" in body:
+            profile.bio = _clean(body.get("bio"), 500)
+
+        if choice:
+            survey = ShorelineSurvey.query.filter_by(user_id=user.id).first()
+            if survey:
+                survey.choice = choice
+            else:
+                db.session.add(ShorelineSurvey(user_id=user.id, choice=choice))
+
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()
+            return {"message": "could not save profile"}, 500
+        return jsonify(_profile_payload(user))
+
+
+class HoursAPI(Resource):
+    @token_required()
+    def post(self):
+        ensure_survey_table()
+        body = request.get_json(silent=True) or {}
+        try:
+            day = date.fromisoformat(str(body.get("date", "")))
+        except ValueError:
+            return {"message": "date must be YYYY-MM-DD"}, 400
+        if day > date.today():
+            return {"message": "date can't be in the future"}, 400
+        try:
+            hours = round(float(body.get("hours")), 2)
+        except (TypeError, ValueError):
+            return {"message": "hours must be a number"}, 400
+        if not 0.25 <= hours <= 24:
+            return {"message": "hours must be between 0.25 and 24"}, 400
+        activity = _clean(body.get("activity"), 40)
+        if activity not in ACTIVITIES:
+            return {"message": f"activity must be one of {ACTIVITIES}"}, 400
+
+        entry = ShorelineHours(user_id=g.current_user.id, date=day, activity=activity,
+                               hours=hours, notes=_clean(body.get("notes"), 200))
+        db.session.add(entry)
+        db.session.commit()
+        return jsonify(_profile_payload(g.current_user))
+
+
+class HoursItemAPI(Resource):
+    @token_required()
+    def delete(self, entry_id):
+        ensure_survey_table()
+        entry = ShorelineHours.query.filter_by(id=entry_id, user_id=g.current_user.id).first()
+        if entry is None:
+            return {"message": "entry not found"}, 404
+        db.session.delete(entry)
+        db.session.commit()
+        return jsonify(_profile_payload(g.current_user))
+
+
 api.add_resource(SignupAPI, "/signup")
 api.add_resource(SurveyAPI, "/survey")
 api.add_resource(SurveyAllAPI, "/survey/all")
+api.add_resource(ProfileAPI, "/profile")
+api.add_resource(HoursAPI, "/hours")
+api.add_resource(HoursItemAPI, "/hours/<int:entry_id>")
 
 
 def initShorelineSurveys():
