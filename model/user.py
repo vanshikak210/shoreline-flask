@@ -294,7 +294,12 @@ class User(db.Model, UserMixin):
             new_hash = password
         else:
             # Not hashed, hash it
-            new_hash = generate_password_hash(password, "pbkdf2:sha256", salt_length=10)
+            # PASSWORD_HASH_ITERATIONS lets a low-CPU host (Render free: ~0.1 CPU) trade some
+            # hashing cost for login speed; unset keeps werkzeug's default (1,000,000).
+            # Existing hashes keep verifying either way: the count is stored in each hash.
+            iterations = os.environ.get('PASSWORD_HASH_ITERATIONS')
+            method = f"pbkdf2:sha256:{int(iterations)}" if iterations else "pbkdf2:sha256"
+            new_hash = generate_password_hash(password, method, salt_length=10)
 
         # Only bump on an actual change, so idempotent operations (e.g. re-importing the
         # same hash during a data restore) don't needlessly invalidate live sessions/JWTs.
