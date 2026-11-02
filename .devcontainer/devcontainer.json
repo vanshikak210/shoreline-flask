@@ -1,29 +1,17 @@
-// For format details, see https://aka.ms/vscode-remote/devcontainer.json or this file's README at:
-// https://github.com/microsoft/vscode-dev-containers/tree/v0.112.0/containers/typescript-node-12
+// Codespaces setup for the Shoreline Flask backend.
+// On create: install requirements and set up the database. On every start: run Flask
+// (gunicorn) on port 8587 in the background; logs go to flask.log.
+// The site reaches it at https://<codespace-name>-8587.app.github.dev (port must be Public).
 {
-  "name": "Docker from Docker example",
-  "dockerComposeFile": "docker-compose.dev-container.yml",
-  "service": "app",
-  "shutdownAction": "stopCompose",
-  // Open the sub-folder with the source code
-  "workspaceFolder": "/workspace",
-  // Make sure the required docker network and volume exist before creating containers
-  "initializeCommand": ".devcontainer/docker-init.sh",
-  // Set *default* container specific settings.json values on container create.
-  "settings": {
-    "#terminal.integrated.defaultProfile.linux#": "/bin/bash"
+  "name": "Shoreline Flask",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "forwardPorts": [8587],
+  "portsAttributes": {
+    "8587": { "label": "Shoreline Flask", "onAutoForward": "silent" }
   },
-  // Add the IDs of extensions you want installed when the container is created.
-  "extensions": [
-    "dbaeumer.vscode-eslint",
-    "esbenp.prettier-vscode",
-    "ms-vsliveshare.vsliveshare",
-    "ms-azuretools.vscode-docker"
-  ],
-  // Use 'forwardPorts' to make a list of ports inside the container available locally.
-  // Left empty because this is handled by docker-compose for individual services,
-  // use this only for additional ports not needed by those services (e.g. ssh)
-  "forwardPorts": [],
-  // Install npm packages to the shared volume before running docker-compose in the container
-  "postCreateCommand": "cd frontend && yarn install && cd ../backend && yarn install"
+  "postCreateCommand": "pip install --user -r requirements.txt",
+  "postStartCommand": "bash .devcontainer/start-flask.sh",
+  "customizations": {
+    "vscode": { "extensions": ["ms-python.python"] }
+  }
 }
