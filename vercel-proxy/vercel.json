@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "rewrites": [
-    { "source": "/:path*", "destination": "https://shoreline-flask.onrender.com/:path*" }
+    { "source": "/(.*)", "destination": "https://shoreline-flask.onrender.com/$1" }
   ]
 }
