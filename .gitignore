@@ -27,3 +27,4 @@ backend.log
 # Codespaces
 instance/secret_key
 flask.log
+instance/port-watchdog.pid
