@@ -5,6 +5,8 @@
 {
   "name": "Shoreline Flask",
   "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  // GitHub CLI: start-flask.sh uses it to keep port 8587 Public.
+  "features": { "ghcr.io/devcontainers/features/github-cli:1": {} },
   "forwardPorts": [8587],
   "portsAttributes": {
     "8587": { "label": "Shoreline Flask", "onAutoForward": "silent" }
