@@ -19,9 +19,23 @@ pkill -f "gunicorn main:app" 2>/dev/null
 nohup python3 -m gunicorn main:app --workers 1 --threads 4 --timeout 60 \
   --bind 0.0.0.0:8587 --access-logfile - >> flask.log 2>&1 &
 
-# Make the port public so browsers can reach it without a GitHub login.
+# Codespaces resets forwarded ports to Private on every restart. Once Flask is
+# listening, flip 8587 back to Public (retrying while Codespaces registers the port),
+# in the background so startup isn't blocked.
 if [ -n "${CODESPACE_NAME:-}" ]; then
-  gh codespace ports visibility 8587:public -c "$CODESPACE_NAME" >/dev/null 2>&1 \
-    || echo "Set port 8587 to Public in the Ports tab." >> flask.log
+  (
+    for _ in $(seq 1 30); do
+      curl -s -o /dev/null http://127.0.0.1:8587/api/id && break
+      sleep 2
+    done
+    for _ in $(seq 1 10); do
+      if gh codespace ports visibility 8587:public -c "$CODESPACE_NAME" >/dev/null 2>&1; then
+        echo "Port 8587 set to Public." >> flask.log
+        exit 0
+      fi
+      sleep 3
+    done
+    echo "Could not set port 8587 to Public automatically: set it in the Ports tab." >> flask.log
+  ) &
   echo "Shoreline backend: https://${CODESPACE_NAME}-8587.${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-app.github.dev}" | tee -a flask.log
 fi
