@@ -1,4 +1,3 @@
-version: '3'
 services:
   web:
     # Shoreline's ports on the shared OCS server: Flask 8550, socket server 8551.

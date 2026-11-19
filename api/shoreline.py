@@ -30,6 +30,7 @@ from flask import Blueprint, g, jsonify, request
 from flask_restful import Api, Resource
 from sqlalchemy.exc import IntegrityError
 
+from sqlalchemy.exc import OperationalError
 from __init__ import app, db
 from model.user import User
 
@@ -168,7 +169,11 @@ def ensure_survey_table():
     """Create the Shoreline tables if missing. Cheap (checkfirst) and safe to call per
     request; OCS Flask init scripts don't know about these models, so we don't rely on them."""
     for model in (ShorelineSurvey, ShorelineProfile, ShorelineHours):
-        model.__table__.create(bind=db.engine, checkfirst=True)
+        try:
+            model.__table__.create(bind=db.engine, checkfirst=True)
+        except OperationalError:
+            # Another gunicorn worker created it between our check and our CREATE.
+            db.session.rollback()
 
 
 class SurveyAPI(Resource):
@@ -354,9 +359,10 @@ api.add_resource(HoursItemAPI, "/hours/<int:entry_id>")
 
 
 def initShorelineSurveys():
+    """Create the Shoreline tables (used by scripts/db_init.py via initUsers-style init).
+
+    Not called at import: gunicorn starts several workers at once, and on a fresh database
+    they would all run CREATE TABLE together and crash with "table already exists".
+    The routes call ensure_survey_table() instead, which is safe under that race."""
     with app.app_context():
-        db.create_all()
-
-
-# Create the shoreline_surveys table on startup if it doesn't exist yet.
-initShorelineSurveys()
+        ensure_survey_table()
