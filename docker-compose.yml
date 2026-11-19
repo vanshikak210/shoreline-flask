@@ -1,25 +1,27 @@
 version: '3'
 services:
   web:
-    image: flask_open
+    # Shoreline's ports on the shared OCS server: Flask 8550, socket server 8551.
+    # Image names are Shoreline-specific so they don't overwrite other students' images.
+    image: shoreline_flask
     build: .
     env_file:
       - .env # This file is optional; defaults will be used if it does not exist
     ports:
-      - "8587:8587"
+      - "8550:8550"
     volumes:
       - ./instance:/app/instance
     restart: unless-stopped
 
   socketio:
-    image: socket_open
+    image: shoreline_socket
     build: ./socket
     ports:
-      - "8500:8500"
+      - "8551:8500"   # host 8551 -> socket server's 8500 inside the container
     restart: unless-stopped
 
   code_runner:
-    image: flask_runner
+    image: shoreline_runner
     build: ./runner
     cap_drop:
       - ALL
