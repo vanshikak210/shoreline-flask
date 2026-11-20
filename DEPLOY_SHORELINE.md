@@ -35,11 +35,11 @@ Warning: db_init **wipes** the tables. Run it once; never again after real users
 
 ## 5. nginx + HTTPS
 ```bash
-sed -i 's/YOUR-DOMAIN/shoreline-api.opencodingsociety.com/' nginx_shoreline.conf   # your backend domain
+sed -i 's/shoreline.opencodingsociety.com/shoreline.opencodingsociety.com/' nginx_shoreline.conf   # your backend domain
 sudo cp nginx_shoreline.conf /etc/nginx/sites-available/shoreline
 sudo ln -s /etc/nginx/sites-available/shoreline /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d shoreline-api.opencodingsociety.com
+sudo certbot --nginx -d shoreline.opencodingsociety.com
 ```
 
 ## Updating later
