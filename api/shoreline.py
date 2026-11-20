@@ -28,10 +28,11 @@ Routes (all under /api/shoreline):
 Also copy shoreline_analytics.py to api/shoreline_analytics.py (the analytics math).
 
 Admin accounts: usernames in SHORELINE_ADMIN_UIDS below are Shoreline admins. They sign up
-as "Admin", and existing accounts are promoted on each worker's first request. Everyone else
+as "Admin", and existing accounts are promoted within a minute (each worker re-checks). Everyone else
 signs up as "User". Admins see the Analytics tab on the frontend.
 """
 
+import time
 from datetime import date, datetime
 
 from flask import Blueprint, g, jsonify, request
@@ -68,15 +69,19 @@ def role_for(uid):
     return "Admin" if uid in SHORELINE_ADMIN_UIDS else "User"
 
 
-_admin_roles_synced = False
+ADMIN_SYNC_SECONDS = 60
+_admin_roles_checked_at = None
 
 
 @shoreline_api.before_app_request
 def sync_admin_roles():
-    """Promote listed usernames that already have accounts. Runs once per worker process;
-    a failure is logged and retried on the next request rather than breaking the request."""
-    global _admin_roles_synced
-    if _admin_roles_synced:
+    """Promote listed usernames that have accounts but not the Admin role. Re-checks at most
+    once a minute per worker, not just at startup, so accounts made later by any route
+    (signup, scripts/add_user.py, OCS /api/user) are promoted too. A failure is logged and
+    retried on the next request rather than breaking the request."""
+    global _admin_roles_checked_at
+    now = time.monotonic()
+    if _admin_roles_checked_at is not None and now - _admin_roles_checked_at < ADMIN_SYNC_SECONDS:
         return
     try:
         users = User.query.filter(User._uid.in_(SHORELINE_ADMIN_UIDS), User._role != "Admin").all()
@@ -85,7 +90,7 @@ def sync_admin_roles():
         if users:
             db.session.commit()
             app.logger.info("Shoreline: promoted %s to Admin", ", ".join(sorted(u._uid for u in users)))
-        _admin_roles_synced = True
+        _admin_roles_checked_at = now
     except Exception:  # e.g. users table not created yet on a fresh database
         db.session.rollback()
         app.logger.exception("Shoreline: could not sync admin roles; will retry")
