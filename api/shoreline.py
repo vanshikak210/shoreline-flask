@@ -27,8 +27,9 @@ Routes (all under /api/shoreline):
 
 Also copy shoreline_analytics.py to api/shoreline_analytics.py (the analytics math).
 
-Admin accounts: signup always creates role "User". Make an admin by setting role = "Admin"
-on the account in Flask (admin panel or database); the frontend then shows the Analytics tab.
+Admin accounts: usernames in SHORELINE_ADMIN_UIDS below are Shoreline admins. They sign up
+as "Admin", and existing accounts are promoted on each worker's first request. Everyone else
+signs up as "User". Admins see the Analytics tab on the frontend.
 """
 
 from datetime import date, datetime
@@ -56,6 +57,38 @@ shoreline_api = Blueprint("shoreline_api", __name__, url_prefix="/api/shoreline"
 api = Api(shoreline_api)
 
 VALID_CHOICES = {"donate", "volunteer", "none"}
+
+# Shoreline admin usernames. Listing a username makes that account an admin; removing one
+# does not demote it (change its role in the database for that).
+SHORELINE_ADMIN_UIDS = frozenset({"nkasse12", "vanish", "toby"})
+
+
+def role_for(uid):
+    """Role a new Shoreline account gets: Admin for listed usernames, otherwise User."""
+    return "Admin" if uid in SHORELINE_ADMIN_UIDS else "User"
+
+
+_admin_roles_synced = False
+
+
+@shoreline_api.before_app_request
+def sync_admin_roles():
+    """Promote listed usernames that already have accounts. Runs once per worker process;
+    a failure is logged and retried on the next request rather than breaking the request."""
+    global _admin_roles_synced
+    if _admin_roles_synced:
+        return
+    try:
+        users = User.query.filter(User._uid.in_(SHORELINE_ADMIN_UIDS), User._role != "Admin").all()
+        for user in users:
+            user._role = "Admin"
+        if users:
+            db.session.commit()
+            app.logger.info("Shoreline: promoted %s to Admin", ", ".join(sorted(u._uid for u in users)))
+        _admin_roles_synced = True
+    except Exception:  # e.g. users table not created yet on a fresh database
+        db.session.rollback()
+        app.logger.exception("Shoreline: could not sync admin roles; will retry")
 
 # Profile choices shown on /shoreline/profile; keep in sync with _data/shoreline_pages.yml.
 NEIGHBORHOODS = ["Pacific Beach", "Mission Beach", "La Jolla", "Other"]
@@ -167,7 +200,7 @@ class SignupAPI(Resource):
             return {"message": f"Username {uid} is already taken"}, 409
 
         try:
-            user = User(name=name, uid=uid, password=password, role="User")
+            user = User(name=name, uid=uid, password=password, role=role_for(uid))
         except Exception as err:  # e.g. WeakPasswordError on newer OCS Flask
             return {"message": str(err)}, 400
 
