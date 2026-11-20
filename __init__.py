@@ -93,8 +93,12 @@ app.config['MY_ROLE'] = os.environ.get('MY_ROLE') or 'User'
 
 # Browser settings
 SECRET_KEY = os.environ.get('SECRET_KEY') or 'SECRET_KEY' # secret key for session management
-SESSION_COOKIE_NAME = os.environ.get('SESSION_COOKIE_NAME') or 'sess_python_flask'
-JWT_TOKEN_NAME = os.environ.get('JWT_TOKEN_NAME') or 'jwt_python_flask'
+# Shoreline-specific cookie names. Every OCS backend uses 'jwt_python_flask', and the
+# class backend sets it for all of .opencodingsociety.com, so with the shared name the
+# browser sent the OCS/classmates' cookie to shoreline-api too and our login looked
+# invalid (logged straight back out). Unique names keep the two sessions apart.
+SESSION_COOKIE_NAME = os.environ.get('SESSION_COOKIE_NAME') or 'sess_shoreline'
+JWT_TOKEN_NAME = os.environ.get('JWT_TOKEN_NAME') or 'jwt_shoreline'
 JWT_TOKEN_MAX_AGE = int(os.environ.get('JWT_TOKEN_MAX_AGE') or 604800)  # Default: 1 week (604800 seconds)
 app.config['SECRET_KEY'] = SECRET_KEY
 app.config['SESSION_COOKIE_NAME'] = SESSION_COOKIE_NAME
