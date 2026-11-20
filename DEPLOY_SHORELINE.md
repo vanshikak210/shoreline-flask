@@ -42,6 +42,10 @@ sudo nginx -t && sudo systemctl reload nginx
 sudo certbot --nginx -d shoreline-api.opencodingsociety.com
 ```
 
+Done (Nov 2026): live at https://shoreline-api.opencodingsociety.com.
+**Never copy nginx_shoreline.conf to the server again**: certbot added the HTTPS
+settings to /etc/nginx/sites-available/shoreline, and copying would erase them.
+
 ## Updating later
 ```bash
 cd ~/shoreline-flask && git pull && docker-compose up -d --build
