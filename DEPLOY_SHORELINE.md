@@ -17,7 +17,7 @@ python3 -c "import secrets; print(secrets.token_hex(32))"   # copy this for SECR
 vim .env        # or: nano .env
 ```
 Fill in SECRET_KEY, ADMIN_PASSWORD, DEFAULT_PASSWORD, and put your frontend
-domain in EXTRA_CORS_ORIGINS (e.g. `https://shoreline.opencodingsociety.com`).
+domain in EXTRA_CORS_ORIGINS (e.g. `https://shoreline-api.opencodingsociety.com`).
 vim: press `i` to type, `Esc` then `:wq` + Enter to save.
 
 ## 3. Build and run with Docker
@@ -35,11 +35,11 @@ Warning: db_init **wipes** the tables. Run it once; never again after real users
 
 ## 5. nginx + HTTPS
 ```bash
-sed -i 's/shoreline.opencodingsociety.com/shoreline.opencodingsociety.com/' nginx_shoreline.conf   # your backend domain
+sed -i 's/shoreline-api.opencodingsociety.com/shoreline-api.opencodingsociety.com/' nginx_shoreline.conf   # your backend domain
 sudo cp nginx_shoreline.conf /etc/nginx/sites-available/shoreline
 sudo ln -s /etc/nginx/sites-available/shoreline /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
-sudo certbot --nginx -d shoreline.opencodingsociety.com
+sudo certbot --nginx -d shoreline-api.opencodingsociety.com
 ```
 
 ## Updating later
