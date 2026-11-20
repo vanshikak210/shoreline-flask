@@ -22,6 +22,13 @@ Routes (all under /api/shoreline):
                                  "availability","interests":[...],"bio","choice"}
     POST /api/shoreline/hours    body {"date":"YYYY-MM-DD","activity","hours","notes"}
     DELETE /api/shoreline/hours/<id>   (only your own entries)
+    GET  /api/shoreline/admin/analytics  (Admin only) -> members, sign-ups per month, survey
+                                 breakdown, volunteer hours, neighborhoods and interests
+
+Also copy shoreline_analytics.py to api/shoreline_analytics.py (the analytics math).
+
+Admin accounts: signup always creates role "User". Make an admin by setting role = "Admin"
+on the account in Flask (admin panel or database); the frontend then shows the Analytics tab.
 """
 
 from datetime import date, datetime
@@ -33,6 +40,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.exc import OperationalError
 from __init__ import app, db
 from model.user import User
+
+try:
+    from api.shoreline_analytics import build_analytics
+except ImportError:  # running from this docs folder
+    from shoreline_analytics import build_analytics
 
 # The decorator moved between OCS Flask versions; support both.
 try:
@@ -122,6 +134,17 @@ class ShorelineHours(db.Model):
         }
 
 
+class ShorelineSignup(db.Model):
+    """When a user signed up through Shoreline, so admins can chart sign-ups per month.
+    Only sign-ups after this table was added have a row; older members still count in totals."""
+
+    __tablename__ = "shoreline_signups"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+
 class SignupAPI(Resource):
     """Public signup for Shoreline visitors. Mirrors /api/user but skips the GitHub check."""
 
@@ -155,6 +178,13 @@ class SignupAPI(Resource):
         # Only the OCS fields we have; sid is required by some versions, reuse uid.
         user.update({"email": email, "sid": uid})
 
+        ensure_survey_table()
+        db.session.add(ShorelineSignup(user_id=user.id))
+        try:
+            db.session.commit()
+        except IntegrityError:
+            db.session.rollback()  # analytics only; the account itself was created
+
         # Newer OCS Flask creates accounts inactive until a teacher verifies them;
         # Shoreline accounts are self-service, so activate immediately.
         if hasattr(user, "activate"):
@@ -168,7 +198,7 @@ class SignupAPI(Resource):
 def ensure_survey_table():
     """Create the Shoreline tables if missing. Cheap (checkfirst) and safe to call per
     request; OCS Flask init scripts don't know about these models, so we don't rely on them."""
-    for model in (ShorelineSurvey, ShorelineProfile, ShorelineHours):
+    for model in (ShorelineSurvey, ShorelineProfile, ShorelineHours, ShorelineSignup):
         try:
             model.__table__.create(bind=db.engine, checkfirst=True)
         except OperationalError:
@@ -213,6 +243,31 @@ class SurveyAllAPI(Resource):
     def get(self):
         ensure_survey_table()
         return jsonify([r.read() for r in ShorelineSurvey.query.order_by(ShorelineSurvey.updated_at.desc()).all()])
+
+
+class AdminAnalyticsAPI(Resource):
+    """Community totals for the admin Analytics tab. Admin role only."""
+
+    @token_required("Admin")
+    def get(self):
+        ensure_survey_table()
+        signups = ShorelineSignup.query.all()
+        surveys = ShorelineSurvey.query.all()
+        profiles = ShorelineProfile.query.all()
+        hours = ShorelineHours.query.all()
+
+        member_ids = {row.user_id for rows in (signups, surveys, profiles, hours) for row in rows}
+        volunteer_ids = {h.user_id for h in hours}
+        names = {u.id: u.name for u in User.query.filter(User.id.in_(volunteer_ids)).all()} if volunteer_ids else {}
+
+        return jsonify(build_analytics(
+            member_ids=member_ids,
+            signup_dates=[s.created_at for s in signups],
+            survey_choices=[s.choice for s in surveys],
+            profiles=[p.read() for p in profiles],
+            hours=[{"user_id": h.user_id, "activity": h.activity, "hours": h.hours} for h in hours],
+            names=names,
+        ))
 
 
 def _clean(value, limit):
@@ -353,6 +408,7 @@ class HoursItemAPI(Resource):
 api.add_resource(SignupAPI, "/signup")
 api.add_resource(SurveyAPI, "/survey")
 api.add_resource(SurveyAllAPI, "/survey/all")
+api.add_resource(AdminAnalyticsAPI, "/admin/analytics")
 api.add_resource(ProfileAPI, "/profile")
 api.add_resource(HoursAPI, "/hours")
 api.add_resource(HoursItemAPI, "/hours/<int:entry_id>")
