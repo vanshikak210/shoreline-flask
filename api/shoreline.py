@@ -443,7 +443,32 @@ class HoursItemAPI(Resource):
         return jsonify(_profile_payload(g.current_user))
 
 
+class PublicStatsAPI(Resource):
+    """GET /api/shoreline/stats: live site totals for anyone, no login and no personal data.
+
+    Shaped for the OCS UI Builder's "Data from your API" block (Numbers view):
+    list_path "stats", value_path "value", label_path "label". Counts only, never names."""
+
+    def get(self):
+        ensure_survey_table()
+        total_hours = db.session.query(db.func.coalesce(db.func.sum(ShorelineHours.hours), 0)).scalar() or 0
+        choices = dict(
+            db.session.query(ShorelineSurvey.choice, db.func.count(ShorelineSurvey.id))
+            .group_by(ShorelineSurvey.choice).all()
+        )
+        hours_text = f"{total_hours:,.0f}" if float(total_hours).is_integer() else f"{total_hours:,.1f}"
+        stats = [
+            {"label": "Members signed up", "value": f"{ShorelineSignup.query.count():,}"},
+            {"label": "Want to volunteer", "value": f"{choices.get('volunteer', 0):,}"},
+            {"label": "Want to donate", "value": f"{choices.get('donate', 0):,}"},
+            {"label": "Volunteer hours logged", "value": hours_text},
+            {"label": "Shifts logged", "value": f"{ShorelineHours.query.count():,}"},
+        ]
+        return jsonify({"updated": datetime.utcnow().isoformat(timespec="seconds") + "Z", "stats": stats})
+
+
 api.add_resource(SignupAPI, "/signup")
+api.add_resource(PublicStatsAPI, "/stats")
 api.add_resource(SurveyAPI, "/survey")
 api.add_resource(SurveyAllAPI, "/survey/all")
 api.add_resource(AdminAnalyticsAPI, "/admin/analytics")
