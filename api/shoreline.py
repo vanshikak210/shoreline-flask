@@ -24,14 +24,18 @@ Routes (all under /api/shoreline):
     DELETE /api/shoreline/hours/<id>   (only your own entries)
     GET  /api/shoreline/admin/analytics  (Admin only) -> members, sign-ups per month, survey
                                  breakdown, volunteer hours, neighborhoods and interests
+    GET  /api/shoreline/preferences  -> {"preferences": {...} or null} (language, theme, read aloud)
+    PUT  /api/shoreline/preferences  body {"preferences": {...}} replaces the caller's saved preferences
 
-Also copy shoreline_analytics.py to api/shoreline_analytics.py (the analytics math).
+Also copy shoreline_analytics.py to api/shoreline_analytics.py (the analytics math) and
+shoreline_preferences.py to api/shoreline_preferences.py (checks saved preferences).
 
 Admin accounts: usernames in SHORELINE_ADMIN_UIDS below are Shoreline admins. They sign up
 as "Admin", and existing accounts are promoted within a minute (each worker re-checks). Everyone else
 signs up as "User". Admins see the Analytics tab on the frontend.
 """
 
+import json
 import time
 from datetime import date, datetime
 
@@ -47,6 +51,11 @@ try:
     from api.shoreline_analytics import build_analytics
 except ImportError:  # running from this docs folder
     from shoreline_analytics import build_analytics
+
+try:
+    from api.shoreline_preferences import PreferencesError, clean_preferences
+except ImportError:  # running from this docs folder
+    from shoreline_preferences import PreferencesError, clean_preferences
 
 # The decorator moved between OCS Flask versions; support both.
 try:
@@ -183,6 +192,18 @@ class ShorelineSignup(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
 
 
+class ShorelinePreferences(db.Model):
+    """A user's site preferences (language, theme, font, read aloud) as one JSON blob, so they
+    follow the person to any device. The frontend normalizes the values when it reads them."""
+
+    __tablename__ = "shoreline_preferences"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), unique=True, nullable=False)
+    data = db.Column(db.Text, nullable=False, default="{}")
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 class SignupAPI(Resource):
     """Public signup for Shoreline visitors. Mirrors /api/user but skips the GitHub check."""
 
@@ -236,7 +257,7 @@ class SignupAPI(Resource):
 def ensure_survey_table():
     """Create the Shoreline tables if missing. Cheap (checkfirst) and safe to call per
     request; OCS Flask init scripts don't know about these models, so we don't rely on them."""
-    for model in (ShorelineSurvey, ShorelineProfile, ShorelineHours, ShorelineSignup):
+    for model in (ShorelineSurvey, ShorelineProfile, ShorelineHours, ShorelineSignup, ShorelinePreferences):
         try:
             model.__table__.create(bind=db.engine, checkfirst=True)
         except OperationalError:
@@ -443,6 +464,47 @@ class HoursItemAPI(Resource):
         return jsonify(_profile_payload(g.current_user))
 
 
+class PreferencesAPI(Resource):
+    """GET/PUT /api/shoreline/preferences: the signed-in user's own preferences only."""
+
+    @token_required()
+    def get(self):
+        ensure_survey_table()
+        row = ShorelinePreferences.query.filter_by(user_id=g.current_user.id).first()
+        if row is None:
+            return jsonify({"preferences": None})
+        try:
+            prefs = json.loads(row.data or "{}")
+        except ValueError:
+            # A damaged row shouldn't lock the user out of the page; the frontend uses defaults.
+            app.logger.warning("Shoreline: unreadable preferences for user %s", g.current_user.id)
+            prefs = None
+        return jsonify({"preferences": prefs, "updated": row.updated_at.isoformat() if row.updated_at else None})
+
+    @token_required()
+    def put(self):
+        ensure_survey_table()
+        body = request.get_json(silent=True) or {}
+        try:
+            prefs = clean_preferences(body.get("preferences"))
+        except PreferencesError as err:
+            return {"message": str(err)}, 400
+        row = ShorelinePreferences.query.filter_by(user_id=g.current_user.id).first()
+        if row is None:
+            row = ShorelinePreferences(user_id=g.current_user.id)
+            db.session.add(row)
+        row.data = json.dumps(prefs, separators=(",", ":"))
+        try:
+            db.session.commit()
+        except IntegrityError:
+            # Two tabs saved the first time at once: the other insert won, so update that row.
+            db.session.rollback()
+            row = ShorelinePreferences.query.filter_by(user_id=g.current_user.id).first()
+            row.data = json.dumps(prefs, separators=(",", ":"))
+            db.session.commit()
+        return jsonify({"preferences": prefs})
+
+
 class PublicStatsAPI(Resource):
     """GET /api/shoreline/stats: live site totals for anyone, no login and no personal data.
 
@@ -475,6 +537,7 @@ api.add_resource(AdminAnalyticsAPI, "/admin/analytics")
 api.add_resource(ProfileAPI, "/profile")
 api.add_resource(HoursAPI, "/hours")
 api.add_resource(HoursItemAPI, "/hours/<int:entry_id>")
+api.add_resource(PreferencesAPI, "/preferences")
 
 
 def initShorelineSurveys():
